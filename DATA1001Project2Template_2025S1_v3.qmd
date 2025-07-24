@@ -1,0 +1,261 @@
+---
+title: "DATA1001 Project 2 NYPD Crime Dataset"
+author: "550597500"
+format: 
+  html:
+    embed-resources: true
+    toc: true
+    code-fold: true
+    code-tools: true
+    table-of-contents: true
+    number-sections: true
+    fontsize: 12pt
+    editor: visual
+    theme: sandstone
+    image: "DATA1001/NYPD_patch.png"
+---
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Loading in required libraries
+library(tidyverse)
+library(ggplot2)
+library(plotly)
+library(sf)
+library(leaflet)
+library(dplyr)
+library(scales)
+library(lubridate)
+library(wesanderson)
+library(kableExtra)
+```
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Import the csv dataset (Full NYPD Dataset) into RStudio
+NYPD_data <- read.csv("~/Desktop/DATA1001/NYPD_Complaint_Data_Historic.csv")
+
+# Convert date format columns from character to date
+NYPD_data$CMPLNT_FR_DT <- mdy(NYPD_data$CMPLNT_FR_DT)
+NYPD_data$CMPLNT_TO_DT <- mdy(NYPD_data$CMPLNT_TO_DT)
+
+# Makes new CMPLNT_FR_DT and CMPLNT_TO_DT from MM/DD/YYYY to MM/YYYY format
+NYPD_data$CMPLNT_FR_YY <- year(NYPD_data$CMPLNT_FR_DT)
+NYPD_data$CMPLNT_TO_YY <- year(NYPD_data$CMPLNT_TO_DT)
+
+# Replace empty columns with NA
+NYPD_data[NYPD_data == ""] <- NA
+
+# Data cleaning empty or irrelevant columns
+NYPD_data <- subset(NYPD_data, select = -c(RPT_DT, PARKS_NM, HADEVELOPT, HOUSING_PSA, TRANSIT_DISTRICT, STATION_NAME))
+
+# Calculate % of NA values per column
+na_percent <- colMeans(is.na(NYPD_data))
+
+# Best practice of keeping columns that have <= to 80% NA
+NYPD_data <- NYPD_data[ , na_percent <= 0.80 ]
+```
+
+# Client Bio
+
+**Client**: New York Police Department
+
+<img src="NYPD_patch.png" width="240" height="300"/>
+
+The [New York Police Department (NYPD)](https://www.nyc.gov/site/nypd/about/about-nypd/mission.page) is responsible for “law enforcement, traffic management, counter-terrorism, and emergency response” in the Bronx, Brooklyn, Manhattan, Queens, and Staten Island (NYPD, n.d.). The NYPD’s mission includes enhancing the quality of life in New York City while promoting transparency and impartiality when enforcing the law.
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE}
+# Load a reference of the borough boundaries
+boroughs_map_sf <- st_read("https://raw.githubusercontent.com/dwillis/nyc-maps/master/boroughs.geojson", quiet=TRUE)
+
+# Number of precints per borough
+boroughs_map_sf$Precincts <- c(4, 16, 23, 23, 12)
+
+# Aesthetics of the borough map from built-in leaflet
+pal <- colorFactor(palette = "Set2", domain = boroughs_map_sf$BoroName)
+
+# Interactive map of NYC with borough borders
+leaflet(boroughs_map_sf) %>%
+  addTiles() %>%
+  setView(lng = -74.0060, lat = 40.7128, zoom = 10) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolygons(fillColor = ~pal(BoroName),
+              weight = 2,
+              color = "black",
+              fillOpacity = 0.5,
+              label = ~paste0(BoroName, ": ", Precincts, " Precincts"),
+              popup = ~paste0("<strong>", BoroName, "</strong>"))
+```
+
+# Recommendation
+
+The NYPD should collaborate with the Department of Education to foster different curriculums that suit the needs of students with low literacy rates, especially in the Bronx and Brooklyn. If the student is still not inclined, vocational programs focusing on practical skills and trades should be offered as a substitute.
+
+# Evidence
+
+Rehabilitating older criminals can be more challenging due to cognitive decline, undesired behavioural characteristics, and social isolation (Logan et al. 2025). Once released, the majority of these criminals are unable to reintegrate into society due to societal and legal factors, which results in the United States having a recidivism rate of 70% within 5 years (Hayden, 2023, p. 470). As such, the NYPD has taken preventative measures targeting offenders under 18 to lessen the burden on the judicial system.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Data frame filtered by age categories and between 2006 and 2019
+crime_by_age <- NYPD_data %>%
+                  filter(as.numeric(CMPLNT_FR_YY) >= 2006 & as.numeric(CMPLNT_FR_YY) <= 2019,
+                         SUSP_AGE_GROUP %in% c("<18", "18-24", "25-44", "45-64", "65+")) %>% 
+                  group_by(SUSP_AGE_GROUP, CMPLNT_FR_YY) %>%
+                  summarise(count = n(), .groups = "drop")
+
+# Line chart of crime by age
+lc_crime_by_age <- ggplot(crime_by_age, aes(x = CMPLNT_FR_YY, 
+                                            y = count,
+                                            color = SUSP_AGE_GROUP)) +
+                    geom_line() +
+                    scale_color_manual(values=wes_palette(n=5, name="Darjeeling2")) +
+                    labs(title = "Crime Complaint per Age Groups",
+                         x = "Complaint Year",
+                         y = "Crime Report Count") +
+                    theme_bw() +
+                    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+                    scale_y_continuous(labels = scales::comma_format()) +
+                    scale_x_continuous(breaks = seq(min(as.numeric(crime_by_age$CMPLNT_FR_YY)),
+                                                    max(as.numeric(crime_by_age$CMPLNT_FR_YY)), by = 1))
+
+ggplotly(lc_crime_by_age)
+```
+
+The Raise the Age legislation enacted in 2017 “changed the age that a child can be prosecuted as an adult to 18 years of age in criminal cases”, which reduced the number of criminal complaints for under-18 offenders (NY Courts, 2019). Although the NYPD prioritised intervention and treatment for non-criminal youth offenders, its efforts could be better realised by improving education standards in historically impoverished and high crime rate boroughs of the Bronx and Brooklyn. This effort would decrease the number of incarcerated youth, which will reduce the incarcerated population while alleviating pressures on the judicial system and correctional facilities. 
+
+::: panel-tabset
+### Overall Under-18 Offenders
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Data frame for overall youth crime across boroughs
+youth_crime_overall <- NYPD_data %>%
+                        filter(SUSP_AGE_GROUP == "<18",
+                               BORO_NM %in% c("MANHATTAN", "BRONX", "BROOKLYN", "QUEENS", "STATEN ISLAND")) %>%
+                        group_by(BORO_NM) %>%
+                        summarise(count = n(), .groups = "drop")
+
+# Bar plot of Youth Crime
+bar_youth_crime <- ggplot(youth_crime_overall, aes(x = BORO_NM, y = count, fill = BORO_NM)) +
+          geom_bar(stat = "identity") +
+          scale_fill_manual(values = c("#dad7cd", "#a3b18a", "#588157", "#3a5a40", "#344e41")) +
+          labs(x = "Borough Name", y = "Crime Count", title = "Under-18 Crime Count per Borough") +
+          scale_y_continuous(labels = comma) +
+          theme_bw()
+
+ggplotly(bar_youth_crime)
+```
+
+### Under-18 Offenders Trend
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Data frame for under-18 crime in boroughs
+under18_crime_boroughs <- NYPD_data %>%
+                              filter(as.numeric(CMPLNT_FR_YY) >= 2006 & as.numeric(CMPLNT_FR_YY) <= 2019,
+                                     BORO_NM != "NA", SUSP_AGE_GROUP == "<18") %>% 
+                              group_by(BORO_NM, CMPLNT_FR_YY) %>%
+                              summarise(count = n(), .groups = "drop")
+
+# Line chart of under-18 borough crimes
+linechart_under18_boroughs <- ggplot(under18_crime_boroughs, aes(x = as.numeric(CMPLNT_FR_YY),
+                                                                     y = count,
+                                                                     color = BORO_NM)) +
+                        geom_line() +
+                        labs(title = "Yearly Crime Complaint for Under-18 Offenders",
+                             x = "Complaint Year",
+                             y = "Crime Report Count") +
+                        scale_color_manual(values=wes_palette(n=5, name="Darjeeling2")) +
+                        theme_bw() +
+                        theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+                        scale_y_continuous(labels = scales::comma_format()) +
+                        scale_x_continuous(breaks = seq(min(as.numeric(under18_crime_boroughs$CMPLNT_FR_YY)),
+                                                        max(as.numeric(under18_crime_boroughs$CMPLNT_FR_YY)), by = 1))
+
+ggplotly(linechart_under18_boroughs)
+```
+:::
+
+## Relationship between Education and Incarceration
+
+Empirical studies have portrayed that “crime and education are inextricably tied together”, as students who fail in school are stuck in a negative virtuous cycle of not understanding the curriculum and slowly pushed out of the school (Vacca, J. 2008, p. 1055). Thus, failing students may seek out other areas in which they may excel, increasing the likelihood of the student participating in criminal activities (Vacca, J. 2008).
+
+Analysing New York City’s 2014 Scholastic Aptitude Test (SAT) results revealed that the Bronx and Brooklyn scored the lowest average SAT scores at 1203 and 1230 respectively, with the weakest categories being reading and writing. Low literacy rates can result in higher unemployment and incarceration rates and reduced potential income.
+
+::: panel-tabset
+### SAT Marks by Borough
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Import the csv dataset (SAT NYC 2014) into RStudio
+SAT_NYC_2014 <- read.csv("~/Desktop/DATA1001/NYC_SAT_2014_to_2015.csv")
+
+# SAT marks data frame
+overall_SAT <- SAT_NYC_2014 %>%
+                mutate(avg_SAT_total = round(Average.Score..SAT.Math. + Average.Score..SAT.Reading. + Average.Score..SAT.Writing.)) %>%
+                filter(!is.na(avg_SAT_total))
+
+# Bar plot of overall average SAT marks per borough
+bp_overall_SAT <- ggplot(overall_SAT, aes(x = Borough, y = avg_SAT_total)) +
+                    geom_boxplot(fill = "skyblue", color = "darkblue") +
+                    labs(title = "Distribution of Average SAT Scores by Borough",
+                         x = "Borough",
+                         y = "Overall Average SAT Score") +
+                    scale_y_continuous(labels = scales::comma_format()) +
+                    theme_bw()
+
+ggplotly(bp_overall_SAT)
+```
+
+### Sub-categories of SAT marks per Borough
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Calculating mean of SAT results into a data frame
+result <- SAT_NYC_2014 %>%
+            group_by(Borough) %>%
+            summarise(Count = n(),
+                      avg_SAT_math = round(mean(Average.Score..SAT.Math., na.rm = TRUE)),
+                      avg_SAT_reading = round(mean(Average.Score..SAT.Reading., na.rm = TRUE)),
+                      avg_SAT_writing = round(mean(Average.Score..SAT.Writing., na.rm = TRUE)),
+                      avg_SAT_total = round(mean(avg_SAT_math + avg_SAT_reading + avg_SAT_writing, na.rm = TRUE)))
+
+# Creating a styled table
+result %>%
+  kbl(format = "html") %>%
+  kable_material(c("striped", "hover"))
+```
+:::
+
+A statistical analysis of crime in India and literacy rate yielded a moderately negative correlation, as seen below (Amin, 2019. p. 62). Furthermore, a cross-examination between state IQ and FBI crime statistics suggested that “the prevalence of both violent and property crimes is associated with lower state IQs” (Bartels et al. 2010. p. 579).
+
+<img src="Stat_analysis.png" width="575" height="333"/>
+
+However, there are limitations to this report as certain environmental factors, such as a child’s safety are difficult to quantify. Moreover, parental figures and a sense of community in a student’s life can play a pivotal role in their academic success in school and higher education.
+
+# Ethics Statement
+
+This report demonstrates the shared value of truthfulness in the [International Statistical Institute](https://isi-web.org/declaration-professional-ethics) by ensuring the data is obtained from reputable sources and is not skewed to portray a misleading relationship between variables. The author avoided conflicts of interest by having no relationships with the aforementioned parties in the report.
+
+# AI usage statement
+No artificial intelligence tool or large language model was utilised in the completion of this report.
+
+# Acknowledgements
+
+## General Resources
+
+-   Average SAT Scores for NYC Public Schools Dataset: <https://www.kaggle.com/datasets/nycopendata/high-schools?resource=download>
+-   Changing ggplot colours: <https://www.sthda.com/english/wiki/ggplot2-colors-how-to-change-colors-automatically-and-manually>
+-   Removing columns from data frame: <https://stackoverflow.com/questions/6286313/remove-an-entire-column-from-a-data-frame-in-r>
+- Quatro document themes: <https://quarto.org/docs/presentations/revealjs/themes.html>
+- RStudio graphs inspiration: <https://r-graph-gallery.com/>
+
+## References
+
+-   Amin, R. (2019). Mathematical Model of Crime and Literacy Rates. *International Journal of Mathematics Trends and Technology-IJMTT*, 65(9), 57-63. <https://ijmttjournal.org/public/assets/volume-65/issue-9/IJMTT-V65I9P509.pdf>
+
+-   Bartels, J., Ryan, J., Urban, L., Glass, L. (2010). Correlations between estimates of state IQ and FBI crime statistics. *Personality and Individual Differences*. 48(5), 579-583. <https://doi.org/10.1016/j.paid.2009.12.010>
+
+-   Hayden, M. (2023). Recidivism Rates in the United States versus Europe: How and Why are they Different?. *Western Michigan University*. <https://scholarworks.wmich.edu/honors_theses/3665/>
+
+-   Logan, M., Wright, J., Meyers, H. (2025). Why “Rehabilitating” Repeat Criminal Offenders Often Fails. *Manhattan Institute*. <https://manhattan.institute/article/why-rehabilitating-repeat-criminal-offenders-often-fails>
+
+-   New York City Department. (n.d.). About NYPD. *New York City Government*. <https://www.nyc.gov/site/nypd/about/about-nypd/about-nypd-landing.page>
+
+-   NY Courts. (2019). Raise the Age (RTA). *New York State Unified Court System*. <https://www.nycourts.gov/courthelp/criminal/RTA.shtml>
+
+-   Vacca, J. S. (2008). Crime can be prevented if schools teach juvenile offenders to read. *Children and Youth Services Review*, 30(9), 1055-1062. <https://doi.org/10.1016/j.childyouth.2008.01.013>
